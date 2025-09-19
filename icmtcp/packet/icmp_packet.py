@@ -7,8 +7,6 @@ class ICMPPacket(IPPacket):
         self.type = 0
         self.seq = 0
         self.id = 0
-        self.checksum = 0
-        self.icmp_layer = ICMP(type=0, code=0, seq=0, id=0)
 
     def get_icmp_layer(self) -> ICMP:
         return ICMP(type=self.type, code=self.code, seq=self.seq, id=self.id)
@@ -28,5 +26,5 @@ class ICMPPacket(IPPacket):
         self.type = icmp.type
         self.id = icmp.id
         self.seq = icmp.seq
-        self.payload = icmp.payload
+        self.payload = icmp.payload.load
         
