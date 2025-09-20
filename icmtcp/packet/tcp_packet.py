@@ -1,5 +1,5 @@
 from scapy.all import TCP, Raw, Packet
-from .ip_packet import IPPacket
+from icmtcp.packet.ip_packet import IPPacket
 
 class TCPPacket(IPPacket):
     def __init__(self):

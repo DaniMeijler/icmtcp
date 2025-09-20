@@ -1,5 +1,4 @@
 from scapy.all import IP, Raw, Packet
-import socket
 
 class IPPacket(object):
     def __init__(self):
