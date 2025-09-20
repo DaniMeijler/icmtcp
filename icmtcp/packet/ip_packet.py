@@ -25,7 +25,11 @@ class IPPacket(object):
         return bytes(packet)
     
     def decompile(self, raw_bytes: bytes) -> None:
-        ip = IP(raw_bytes)
+        try:
+            ip = IP(raw_bytes)
+        except Exception as e:
+            raise Exception("can't compile non ip packet")
+        
         self.src_ip = ip.getlayer('IP').src
         self.dst_ip = ip.getlayer('IP').dst
         self.payload = ip.getlayer('Raw').load

@@ -21,7 +21,11 @@ class ICMPPacket(IPPacket):
     
     def decompile(self, raw_bytes: bytes) -> None:
         super().decompile(raw_bytes)
-        icmp = ICMP(self.payload)
+        try:
+            icmp = ICMP(self.payload)
+        except Exception as e:
+            raise Exception("can't compile non icmp packet")
+        
         self.code = icmp.code
         self.type = icmp.type
         self.id = icmp.id

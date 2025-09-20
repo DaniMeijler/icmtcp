@@ -22,8 +22,12 @@ class TCPPacket(IPPacket):
         return bytes(tcp_layer / data)
     
     def decompile(self, raw_bytes: bytes) -> None:
-        super().decompile(raw_bytes)
-        tcp= TCP(self.payload)
+        super().decompile(raw_bytes)   
+        try:
+            tcp= TCP(self.payload)
+        except Exception as e:
+            raise Exception("can't compile non tcp packet")
+        
         self.src_port = tcp.sport
         self.dst_port = tcp.dport
         self.ack = tcp.ack
