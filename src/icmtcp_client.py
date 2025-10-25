@@ -1,7 +1,7 @@
 import socket
 import threading
 import time
-from .logger import Logger
+from .utils.logger import Logger
 
 DEFAULT_TCP_LISTEN_PORT = 1704
 LOCALHOST_IP = "0.0.0.0"
