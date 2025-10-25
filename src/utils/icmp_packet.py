@@ -2,6 +2,11 @@ from .logger import Logger
 import struct
 
 ICMP_PACKET_SIZE = 4096
+ICMP_PAYLOAD_MAX_SIZE = 1472
+ICMP_ECHO_REQUEST_TYPE = 8
+ICMP_ECHO_REPLY_TYPE = 0
+ICMP_ECHO_REQUEST_CODE = 0
+ICMP_ECHO_REPLY_CODE = 0
 
 logger = Logger(__name__)
 
@@ -15,12 +20,9 @@ class ICMPPacket:
 
     def raw_packet(self) -> bytes:
         """Return the raw ICMP packet bytes (header with checksum + payload)"""
-        payload = self.payload
-
-        checksum = self.calculate_checksum()
-
-        header = struct.pack('!BBHHH', self.type, self.code, checksum, self.id, self.seq_num)
-        return header + payload
+        header = struct.pack('!BBHHH', self.type, self.code, self.calculate_checksum(),
+                              self.id, self.seq_num)
+        return header + self.payload
     
     def calculate_checksum(self) -> int:
         """Calculate the ICMP packet checksum. Compliant with RFC 1071"""

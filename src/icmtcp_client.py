@@ -17,17 +17,37 @@ class ICMTCPClient:
         self.tcp_server_socket = self.create_tcp_server_socket(
             LOCALHOST_IP, self.tcp_listen_port
         )
+        self.icmp_socket = self.create_icmp_socket()
 
     @staticmethod
     def create_tcp_server_socket(ip, port):
         """Create a TCP server socket bound to the specified IP and port."""
-        tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp_server_socket.bind((ip, port))
+        try:
+            tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp_server_socket.bind((ip, port))
 
-        # set option for immediate reuse of the socket
-        tcp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        logger.info(f"TCP server socket created and bound to {ip}:{port}")  
+            # set option for immediate reuse of the socket
+            tcp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            logger.info(f"TCP server socket created and bound to {ip}:{port}")  
+
+        except Exception as e:
+            logger.error(f"Failed to create TCP server socket: {e}")
+            raise e
+        
         return tcp_server_socket
+    
+    @staticmethod
+    def create_icmp_socket():
+        """Create a raw ICMP socket"""
+        try:
+            icmp_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+            logger.info("ICMP socket created successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to create ICMP socket: {e}")
+            raise e
+        
+        return icmp_socket
     
     def handle_tcp_connection(self, client_socket, client_address):
         """Handle client TCP session"""
