@@ -5,6 +5,8 @@ from .logger import Logger
 
 DEFAULT_TCP_LISTEN_PORT = 1704
 LOCALHOST_IP = "0.0.0.0"
+TCP_PACKET_SIZE = 4096
+CLIENT_TIMEOUT = 10  # seconds
 
 logger = Logger(__name__)
 
@@ -27,6 +29,30 @@ class ICMTCPClient:
         logger.info(f"TCP server socket created and bound to {ip}:{port}")  
         return tcp_server_socket
     
+    def handle_tcp_connection(self, client_socket, client_address):
+        """Handle client TCP session"""
+        # Placeholder for handling TCP connection logic
+        try:
+            while True:
+                data = client_socket.recv(TCP_PACKET_SIZE)
+                if data:
+                    logger.info(f"Received data: {data}")
+                    # implement the logic to encapsulate data in ICMP packets
+                    # and send it to the tunnel_ip here
+                else:
+                    logger.info("No data received, closing connection")
+                    break
+        
+        except socket.timeout:
+            logger.error("Client connection timed out, closing connection")
+        
+        except Exception as e:
+            logger.error(f"Error handling TCP connection: {e}")
+        
+        finally:
+            client_socket.close()
+            logger.info(f"Client socket from address {client_address} closed")
+    
     def tcp_server_worker(self):
         """Worker function to handle incoming TCP connections."""
         self.tcp_server_socket.listen(5)
@@ -35,8 +61,8 @@ class ICMTCPClient:
         while True:
             client_socket, client_address = self.tcp_server_socket.accept()
             logger.info(f"Accepted connection from {client_address}")
-            time.sleep(5)  # Placeholder for actual handling logic
-            client_socket.close()
+            client_socket.settimeout(CLIENT_TIMEOUT)
+            threading.Thread(target=self.handle_tcp_connection, args=(client_socket, client_address,), daemon=True).start()
     
     def start(self):
         """Start ICMTCP client"""
