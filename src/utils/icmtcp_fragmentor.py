@@ -3,21 +3,29 @@ from .icmp_packet import ICMPPacket, ICMP_ECHO_REQUEST_TYPE, ICMP_ECHO_REQUEST_C
 from .logger import Logger
 import pickle
 
+logger = Logger(__name__)
+
 @staticmethod
-def encapsule_tcp_data(tcp_data, id, dest_host, dest_port):
+def fragment(tcp_data, id, dest_host, dest_port):
     """
-    @brief: Encapsulate TCP data into ICMP packets
-    @param tcp_data: raw TCP data to be encapsulated
+    @brief: Fragment TCP data into ICMP packets
+    @param tcp_data: raw TCP data to be fragmented
     @returns: list of ICMP packets
     """
     packet_length = len(tcp_data)
+    logger.debug(f"Fragmenting TCP data of length {packet_length} with ID {id}")
     i = 1
     fragments = []
     fragments.append(create_header_fragment(tcp_data, dest_host, dest_port, id))
 
     while tcp_data != b"":
-        fragment_payload = tcp_data[:ICMP_PAYLOAD_MAX_SIZE]
-        tcp_data = tcp_data[ICMP_PAYLOAD_MAX_SIZE:]
+        if packet_length < ICMP_PAYLOAD_MAX_SIZE:
+            fragment_payload = tcp_data
+            tcp_data = b""
+        
+        else:
+            fragment_payload = tcp_data[:ICMP_PAYLOAD_MAX_SIZE]
+            tcp_data = tcp_data[ICMP_PAYLOAD_MAX_SIZE:]
 
         packet = ICMPPacket(
             type=ICMP_ECHO_REQUEST_TYPE,
@@ -54,29 +62,3 @@ def create_header_fragment(tcp_data, dest_host, dest_port, id):
     )
 
     return header_fragment
-
-@staticmethod
-def decapsule_icmp_packet(icmp_tcp_fragments):
-    """
-    @brief: Decapsulate ICMP packets to retrieve TCP data
-    @param icmp_tcp_fragments: list of ICMP packets containing TCP data
-    @returns: raw TCP data, dest_host, dest_port
-    """
-    # Sort fragments based on sequence number
-    icmp_tcp_fragments.sort(key=lambda pkt: pkt.seq_num)
-
-    header_fragment = icmp_tcp_fragments.pop(0)
-    header_info = pickle.loads(header_fragment.payload)
-    dest_host = header_info["dest_host"]
-    dest_port = header_info["dest_port"]
-    packet_length = header_info["tcp_packet_length"]
-
-    tcp_data = b""
-    for fragment in icmp_tcp_fragments:
-        tcp_data += fragment.payload
-    
-    if len(tcp_data) != packet_length:
-        raise Exception("Missing data: reconstructed TCP data length does not match header info")
-    
-    return tcp_data, dest_host, dest_port
-

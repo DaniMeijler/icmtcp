@@ -1,7 +1,6 @@
 import pickle
 from .icmp_packet import ICMPPacket, ICMP_ECHO_REQUEST_TYPE, ICMP_ECHO_REQUEST_CODE, ICMP_PAYLOAD_MAX_SIZE
 from .logger import Logger
-from .tcp_icmp_converter import decapsule_icmp_packet
 
 logger = Logger(__name__)
 
