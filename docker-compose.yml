@@ -1,0 +1,50 @@
+services:
+  icmtcp_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: icmtcp_server
+    command: sh -c "sysctl -w net.ipv4.ip_forward=1 && iptables -P FORWARD ACCEPT && iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE && python3 icmtcp_server.py -t 1.2.3.5"
+    ports:
+      - "10000:65000"
+    networks:
+      icmtcpnet:
+        ipv4_address: 1.2.3.4
+    privileged: true
+    sysctls:
+      - net.ipv4.conf.all.forwarding=1
+      - net.ipv4.ip_forward=1
+    cap_add:
+      - NET_ADMIN
+
+  icmtcp_client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: icmtcp_client
+    # Run two instances of the client in the same container (two processes).
+    # Each instance listens on a different local TCP port and forwards to a different destination.
+    command: >
+      bash -lc "\
+        python3 icmtcp_client.py -t 1.2.3.4 -d 95.85.16.212 -p 80 --tcp_listen_port 1704 & \
+        python3 icmtcp_client.py -t 1.2.3.4 -d stackoverflow.com -p 80 --tcp_listen_port 1705 & \
+        wait\
+      "
+    ports:
+      - "1704:1704"
+      - "1705:1705"
+    networks:
+      icmtcpnet:
+        ipv4_address: 1.2.3.5
+    privileged: true
+
+networks:
+  icmtcpnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 1.2.3.0/24
+          gateway: 1.2.3.1
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.bridge.enable_icc: "true"

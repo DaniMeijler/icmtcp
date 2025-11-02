@@ -14,7 +14,10 @@ class ICMTCPFragmentReciever:
         self.dest_port = None
 
     def recieve_fragment(self, icmp_packet):
-        """Handle a received ICMP fragment"""
+        """
+        @brief: Process a received ICMP fragment
+        @param icmp_packet: ICMPPacket object representing the received fragment
+        """
         if icmp_packet.id != self.id:
             logger.error(f"Received fragment with unexpected ID {icmp_packet.id}, expected {self.id}")
             raise ValueError("Unexpected fragment ID")
@@ -33,13 +36,20 @@ class ICMTCPFragmentReciever:
             self.recieved_bytes += len(icmp_packet.payload)
 
     def is_complete(self):
-        """Check if all fragments have been received"""
+        """
+        @brief: Check if all fragments have been received
+        @returns: True if all fragments are received, False otherwise
+        """
         if self.total_tcp_bytes is None:
             return False
         
         return self.recieved_bytes >= self.total_tcp_bytes
     
     def reconstruct_tcp_data(self):
+        """
+        @brief: Reconstruct the original TCP data from received fragments
+        @returns: tuple of (tcp_data, dest_host, dest_port)
+        """
         if not self.is_complete():
             logger.error("Cannot reconstruct TCP data: fragments are incomplete")
             raise ValueError("Fragments are incomplete")

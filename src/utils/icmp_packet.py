@@ -19,13 +19,19 @@ class ICMPPacket:
         self.payload = payload
 
     def raw_packet(self) -> bytes:
-        """Return the raw ICMP packet bytes (header with checksum + payload)"""
+        """
+        @brief Construct the raw bytes of the ICMP packet
+        @returns: raw bytes of the ICMP packet
+        """
         header = struct.pack('!BBHHH', self.type, self.code, self.calculate_checksum(),
                               self.id, self.seq_num)
         return header + self.payload
     
     def calculate_checksum(self) -> int:
-        """Calculate the ICMP packet checksum. Compliant with RFC 1071"""
+        """
+        @brief Calculate the checksum for the ICMP packet (RFC 1071)
+        @returns: checksum as an integer
+        """
         header = struct.pack("!BBHHH", self.type, self.code, 0, self.id, self.seq_num)
         payload = self.payload
 
@@ -47,7 +53,10 @@ class ICMPPacket:
         return checksum
     
     def from_bytes(self, raw_data: bytes):
-        """Parse raw ICMP bytes and into ICMPPacket instance."""
+        """
+        @brief Parse raw bytes into ICMP packet fields
+        @param raw_data: raw bytes of the ICMP packet
+        """
         
         if not isinstance(raw_data, (bytes)):
             raise TypeError("raw_data must be bytes")

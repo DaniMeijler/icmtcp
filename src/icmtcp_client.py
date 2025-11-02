@@ -1,13 +1,14 @@
 import socket
 import threading
 import time
-from .utils.logger import Logger
-from .icmtcp_tunnel import ICMTCPTunnel
+from utils.logger import Logger
+from utils.icmtcp_tunnel import ICMTCPTunnel
+import argparse
 
 DEFAULT_TCP_LISTEN_PORT = 1704
 LOCALHOST_IP = "0.0.0.0"
 TCP_PACKET_SIZE = 4096
-CLIENT_TIMEOUT = 10  # seconds
+CLIENT_TIMEOUT = 100  # seconds
 
 logger = Logger(__name__)
 
@@ -20,18 +21,23 @@ class ICMTCPClient:
             LOCALHOST_IP, self.tcp_listen_port
         )
         self.icmp_tunnel = ICMTCPTunnel(tunnel_ip)
-        self.active_tcp_connections = {}
+        self.client_tcp_connection = None
 
     @staticmethod
     def create_tcp_server_socket(ip, port):
-        """Create a TCP server socket bound to the specified IP and port."""
+        """
+        @brief: Create and bind a TCP server socket
+        @param ip: IP address to bind the socket
+        @param port: Port number to bind the socket
+        @returns: bound TCP server socket
+        """
         try:
             tcp_server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             tcp_server_socket.bind((ip, port))
 
             # set option for immediate reuse of the socket
             tcp_server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            logger.info(f"TCP server socket created and bound to {ip}:{port}")  
+            logger.debug(f"TCP server socket created and bound to {ip}:{port}")  
 
         except Exception as e:
             logger.error(f"Failed to create TCP server socket: {e}")
@@ -40,14 +46,23 @@ class ICMTCPClient:
         return tcp_server_socket
     
     def handle_tcp_connection(self, client_socket, client_address):
-        """Handle client TCP session"""
-        # Placeholder for handling TCP connection logic
+        """
+        @brief: Handle an individual TCP connection
+        @param client_socket: socket object for the client connection
+        @param client_address: address of the connected client
+        """
         try:
-            self.active_tcp_connections[client_address] = client_socket
+            if self.client_tcp_connection is None:
+                self.client_tcp_connection = client_socket
+            else:
+                logger.error(f"""New unknown client tried to connect from {client_address}
+                              while handling active connection.""")
+                raise Exception("Multi connection handeling not supported.")
+
             while True:
                 data = client_socket.recv(TCP_PACKET_SIZE)
                 if data:
-                    logger.info(f"Received data: {data}")
+                    logger.debug(f"Received data from tcp socket: {data}")
                     self.icmp_tunnel.send_tcp_data(data, self.dest_address, self.dest_port)
                 else:
                     logger.info("No data received, closing connection")
@@ -61,11 +76,13 @@ class ICMTCPClient:
         
         finally:
             client_socket.close()
-            self.active_tcp_connections.pop(client_address, None)
+            self.client_tcp_connection = None
             logger.info(f"Client socket from address {client_address} closed")
     
     def tcp_to_tunnel_worker(self):
-        """Worker function to handle incoming TCP connections."""
+        """
+        @brief: Worker function to accept TCP connections and forward data to ICMP tunnel
+        """
         self.tcp_server_socket.listen(5)
         logger.info(f"TCP server listening on {LOCALHOST_IP}:{self.tcp_listen_port}")
 
@@ -76,34 +93,66 @@ class ICMTCPClient:
             threading.Thread(target=self.handle_tcp_connection, args=(client_socket, client_address,), daemon=True).start()
 
     def tunnel_to_tcp_worker(self):
-        """Worker function to handle incoming ICMP packets and forward to TCP."""
+        """
+        @brief: Worker function to forward received TCP data from ICMP tunnel to local TCP connections
+        """
         while True:
             while self.icmp_tunnel.recieved_tcp_packets:
-                tcp_data, dest_host, dest_port = self.icmp_tunnel.recieved_tcp_packets.pop(0)
-                if (dest_host, dest_port) in self.active_tcp_connections:
-                    client_socket = self.active_tcp_connections[(dest_host, dest_port)]
-                    client_socket.sendall(tcp_data)
-                    logger.info(f"Forwarded TCP data to {dest_host}:{dest_port}")
-                else:
-                    logger.error(f"No active TCP connection for {dest_host}:{dest_port}")
+                tcp_data, _, _ = self.icmp_tunnel.recieved_tcp_packets.pop(0)
+                if self.client_tcp_connection is not None:
+                    self.client_tcp_connection.sendall(tcp_data)
+                logger.debug(f"Sent back {len(tcp_data)} bytes to client through tcp connection.")
+                logger.debug(f"data sent {tcp_data}")
             time.sleep(0.1)
     
     def start(self):
-        """Start ICMTCP client"""
-        tcp_to_tunnel_thread = threading.Thread(target=self.tcp_to_tunnel_worker, daemon=True)
-        tunnel_to_tcp_thread = threading.Thread(target=self.tunnel_to_tcp_worker, daemon=True)
-        tunnel_thread = threading.Thread(target=self.icmp_tunnel.run, daemon=True)
-        tcp_to_tunnel_thread.start()
-        tunnel_to_tcp_thread.start()
-        tunnel_thread.start()
-        logger.info("ICMTCP client started")
+        """
+        @brief: Start ICMTCP client
+        """
+        try:
+            tcp_to_tunnel_thread = threading.Thread(target=self.tcp_to_tunnel_worker, daemon=True)
+            tunnel_to_tcp_thread = threading.Thread(target=self.tunnel_to_tcp_worker, daemon=True)
+            tunnel_thread = threading.Thread(target=self.icmp_tunnel.run, daemon=True)
+            tcp_to_tunnel_thread.start()
+            tunnel_to_tcp_thread.start()
+            tunnel_thread.start()
+            logger.info("ICMTCP client started")
+        except Exception as e:
+            logger.error(f"Exception occured in start routine: {e}")
 
     def close(self):
-        """Close the ICMTCP client"""
+        """
+        @brief: Close ICMTCP client
+        """
         self.tcp_server_socket.close()
-        for sock in self.active_tcp_connections.values():
-            sock.close()
+        if self.client_tcp_connection is not None:
+            self.client_tcp_connection.close()
         self.icmp_tunnel.close()
         logger.info("ICMTCP client closed")
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="ICMTCP Client")
+    parser.add_argument("-t", "--tunnel_ip", help="IP address of the ICMTCP tunnel server", required=True)
+    parser.add_argument("-d", "--dest_address", help="Destination IP address for TCP data", required=True)
+    parser.add_argument("-p", "--dest_port", type=int, help="Destination port for TCP data", required=True)
+    parser.add_argument("--tcp_listen_port", type=int, default=DEFAULT_TCP_LISTEN_PORT, help="Local TCP listen port (default: 1704)", required=False)
+    return parser.parse_args()
+
+def main():
+    args = parse_arguments()
+    client = ICMTCPClient(args.tunnel_ip, args.dest_address, args.dest_port, tcp_listen_port=args.tcp_listen_port)
+    try:
+        client.start()
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("Shutting down ICMTCP client")
+    except Exception as e:
+        logger.error(f"Error occured in client: {e}")
+    finally:
+        client.close()
+
+if __name__ == '__main__':
+    main()
 
 
