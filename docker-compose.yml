@@ -27,7 +27,7 @@ services:
     command: >
       bash -lc "\
         python3 icmtcp_client.py -t 1.2.3.4 -d 95.85.16.212 -p 80 --tcp_listen_port 1704 & \
-        python3 icmtcp_client.py -t 1.2.3.4 -d stackoverflow.com -p 80 --tcp_listen_port 1705 & \
+        python3 icmtcp_client.py -t 1.2.3.4 -d 1.1.1.1 -p 80 --tcp_listen_port 1705 & \
         wait\
       "
     ports:
