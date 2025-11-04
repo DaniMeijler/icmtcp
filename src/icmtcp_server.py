@@ -159,7 +159,7 @@ class ICMTCPServer:
             
     def send_tcp_data_to_tunnel(self, tcp_data, source_socket):
         """
-        @brief Send TCP data to the ICMP tunnel
+        @brief Send recieved TCP data to the ICMP tunnel
         @param tcp_data The TCP data to send
         @param source_socket The source TCP socket
         """

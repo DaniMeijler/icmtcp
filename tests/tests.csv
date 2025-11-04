@@ -1,0 +1,30 @@
+test_name,test_description,tested_classes,test_type,input,expected output
+test_init_default_values,Verify ICMPPacket initializes with correct default values,ICMPPacket,unit,No input parameters,All fields initialized to 0 or empty
+test_init_custom_values,Verify ICMPPacket initializes with custom values,ICMPPacket,unit,type=8, code=0, id=1234, seq_num=5, payload=b'test',All fields match input values (type=8, code=0, etc)
+test_raw_packet_structure,Verify raw packet byte structure is correct,ICMPPacket,unit,echo_request_packet fixture,Correctly structured bytes with header and payload
+test_checksum_calculation,Verify ICMP checksum calculation for RFC 1071,ICMPPacket,unit,Simple packet with known values,Valid 16-bit checksum that sums to 0xFFFF
+test_from_bytes_valid_packet,Test parsing raw bytes into ICMP packet fields,ICMPPacket,unit,Raw ICMP packet bytes,Correctly parsed packet object
+test_from_bytes_invalid_input,Test error handling for invalid raw packet data,ICMPPacket,unit,Invalid inputs: string, short bytes,TypeError and ValueError raised
+test_create_header_fragment,Test creation of metadata header fragment,ICMTCPFragmentor,unit,test_data=b'Hello World', dest_host='example.com', dest_port=80,Header packet with correct metadata
+test_fragment_small_payload,Test fragmenting data that fits in one packet,ICMTCPFragmentor,unit,Small payload under max size,Header fragment + one data fragment
+test_fragment_large_payload,Test fragmenting data larger than max size,ICMTCPFragmentor,unit,Payload > ICMP_PAYLOAD_MAX_SIZE,Multiple correctly sized fragments
+test_fragment_empty_payload,Test handling empty data input,ICMTCPFragmentor,unit,Empty bytes object,Header fragment + empty data fragment
+test_fragment_sequence_numbering,Verify fragment sequence numbers are correct,ICMTCPFragmentor,unit,Large multi-fragment payload,Sequential numbering starting from 0
+test_fragment_max_size_boundary,Test fragmentation at size boundaries,ICMTCPFragmentor,unit,Payload at exact max size and max+1,Correct number of fragments
+test_init,Test fragment receiver initialization,ICMTCPFragmentReceiver,unit,Fragment ID,Empty initial state
+test_receive_header_fragment,Test processing of header metadata fragment,ICMTCPFragmentReceiver,unit,Header packet with metadata,Correctly parsed metadata
+test_receive_data_fragments_in_order,Test receiving fragments at roght order,ICMTCPFragmentReceiver,unit,Ordered sequence of fragments,All fragments stored in order
+test_receive_data_fragments_out_of_order,Test handling out of order fragments,ICMTCPFragmentReceiver,unit,Out-of-order fragment sequence,Correct final reconstruction
+test_receive_duplicate_fragment,Test duplicate fragment handling,ICMTCPFragmentReceiver,unit,Same fragment twice,Single stored instance
+test_invalid_fragment_id,Test rejection of wrong fragment ID,ICMTCPFragmentReceiver,unit,Fragment with incorrect ID,ValueError raised
+test_is_complete,Test fragment completion detection,ICMTCPFragmentReceiver,unit,Various fragment combinations,Correct completion status
+test_reconstruct_tcp_data,Test TCP data reconstruction from fragments,ICMTCPFragmentReceiver,unit,Complete set of fragments,Original TCP data reconstructed
+test_reconstruct_incomplete,Test incomplete reconstruction handling,ICMTCPFragmentReceiver,unit,Incomplete fragment set,ValueError raised
+test_logger_initialization,Test logger setup and properties,Logger,unit,Module name,Configured logger instance
+test_log_levels,Test all logging levels work,Logger,unit,Messages at different levels,Correct log output
+test_basic_connection,Test client server basic connection,ICMTCPClient/ICMTCPServer,integration,HTTP GET request,Valid HTTP response
+test_multiple_requests,Test multiple requests one after another,ICMTCPClient/ICMTCPServer,integration,Multiple HTTP requests,Multiple valid responses
+test_connection_timeout,Test client timeout handling,ICMTCPClient/ICMTCPServer,integration,Wait beyond timeout,Connection closed
+test_large_data_transfer,Test large payload handling,ICMTCPClient/ICMTCPServer,integration,65KB POST request,Complete response
+test_bidirectional_communication,Test two way tunnel communication,ICMTCPTunnel,integration,Test data through tunnel,Data received correctly
+test_multiple_packet_streams,Test two packet streams at the same time from client to server,ICMTCPTunnel,integration,Two different data streams,Both streams received
