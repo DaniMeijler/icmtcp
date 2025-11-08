@@ -13,7 +13,7 @@ class ICMTCPFragmentReciever:
         self.dest_host = None
         self.dest_port = None
 
-    def recieve_fragment(self, icmp_packet):
+    def recieve_fragment(self, icmp_packet: ICMPPacket):
         """
         @brief: Process a received ICMP fragment
         @param icmp_packet: ICMPPacket object representing the received fragment
@@ -23,7 +23,6 @@ class ICMTCPFragmentReciever:
             raise ValueError("Unexpected fragment ID")
         
         if icmp_packet.seq_num == 0:
-            # This is the header fragment
             header_info = pickle.loads(icmp_packet.payload)
             self.total_tcp_bytes = header_info["tcp_packet_length"]
             self.dest_host = header_info["dest_host"]

@@ -36,7 +36,7 @@ class ICMTCPTunnel:
         
         return icmp_socket
     
-    def send_confirmation(self, icmp_packet: ICMPPacket):
+    def _send_confirmation(self, icmp_packet: ICMPPacket):
         """
         @brief Send a confirmation ICMP packet for the received fragment
         @param icmp_packet The received ICMP packet to confirm
@@ -55,7 +55,7 @@ class ICMTCPTunnel:
             logger.error(f"Failed to send confirmation ICMP packet: {e}")
             raise e
     
-    def recieve_packet(self, packet: ICMPPacket):
+    def _recieve_packet(self, packet: ICMPPacket):
         """
         @brief Handle a received ICMP packet
         @param raw_data The raw bytes of the received ICMP packet
@@ -73,13 +73,13 @@ class ICMTCPTunnel:
             logger.error(f"Error processing fragment: {e}")
             return
     
-        self.send_confirmation(packet)
+        self._send_confirmation(packet)
 
         if handler.is_complete():
-            self.complete_fragment(packet.id)
+            self._complete_fragment(packet.id)
             
 
-    def complete_fragment(self, id):
+    def _complete_fragment(self, id: int):
         """
         @brief Handle the completion of fragment reception for a given ID 
             and add complete TCP data to tcp queue
@@ -96,7 +96,7 @@ class ICMTCPTunnel:
                 
         del self.fragment_recievers[id]
     
-    def packet_recieve_worker(self):
+    def _packet_recieve_worker(self):
         """
         @brief Worker function to receive ICMP packets
         """
@@ -111,16 +111,16 @@ class ICMTCPTunnel:
                 continue
 
             if packet.type == ICMP_ECHO_REPLY_TYPE:
-                self.confirm_packet(packet)
+                self._confirm_packet(packet)
 
             elif packet.type == ICMP_ECHO_REQUEST_TYPE:
-                self.recieve_packet(packet)
+                self._recieve_packet(packet)
 
             else:
                 logger.warning(f"Received ICMP packet with unsupported type {packet.type}")
                 logger.debug(f"type: {packet.type}, code: {packet.code}, id: {packet.id}, seq: {packet.seq_num}, payload: {packet.payload}")
 
-    def confirm_packet(self, packet: ICMPPacket):
+    def _confirm_packet(self, packet: ICMPPacket):
         """
         @brief Handle confirmation of sent ICMP packet
         @param packet The confirmed ICMP packet
@@ -132,7 +132,7 @@ class ICMTCPTunnel:
         else:
             logger.warning(f"Received confirmation for unknown ICMP packet ID {packet.id} Seq {packet.seq_num}")
 
-    def send_icmp_packet(self, icmp_packet: ICMPPacket):
+    def _send_icmp_packet(self, icmp_packet: ICMPPacket):
         """
         @brief Send an ICMP packet through the tunnel
         @param icmp_packet The ICMP packet to send
@@ -146,16 +146,16 @@ class ICMTCPTunnel:
             logger.error(f"Failed to send ICMP packet: {e}")
             raise e
         
-        self.add_to_confirmation_list(icmp_packet)
+        self._add_to_confirmation_list(icmp_packet)
         
-    def add_to_confirmation_list(self, icmp_packet: ICMPPacket):
+    def _add_to_confirmation_list(self, icmp_packet: ICMPPacket):
         """
         @brief Add an ICMP packet to the pending confirmation list
         @param icmp_packet The ICMP packet to track for confirmation
         """
         self.pending_fragment_confirmations[(icmp_packet.id, icmp_packet.seq_num)] = (icmp_packet, datetime.now())
 
-    def retransmit_worker(self):
+    def _retransmit_worker(self):
         """
         @brief Worker function to retransmit unconfirmed ICMP packets
         """
@@ -170,9 +170,9 @@ class ICMTCPTunnel:
             for packet in to_retransmit:
                 logger.info(f"Retransmitting ICMP packet ID {packet.id} Seq {packet.seq_num}")
                 logger.debug(f"Raw data: {packet.raw_packet()}")
-                self.send_icmp_packet(packet)
+                self._send_icmp_packet(packet)
 
-    def send_tcp_data(self, tcp_data, dest_host, dest_port):
+    def send_tcp_data(self, tcp_data: bytes, dest_host: str, dest_port: int):
         """
         @brief Fragment and send TCP data over ICMP
         @param tcp_data The raw TCP data to send
@@ -181,14 +181,14 @@ class ICMTCPTunnel:
         logger.info(f"Fragmented TCP data into {len(icmp_fragments)} ICMP packets with ID {self.fragment_id}")
         self.fragment_id += 1
         for icmp_packet in icmp_fragments:
-            self.send_icmp_packet(icmp_packet)
+            self._send_icmp_packet(icmp_packet)
 
     def run(self):
         """
         @brief Start the ICMTCP tunnel
         """
-        recieve_thread = threading.Thread(target=self.packet_recieve_worker, daemon=True)
-        retransmit_thread = threading.Thread(target=self.retransmit_worker, daemon=True)
+        recieve_thread = threading.Thread(target=self._packet_recieve_worker, daemon=True)
+        retransmit_thread = threading.Thread(target=self._retransmit_worker, daemon=True)
 
         recieve_thread.start()
         retransmit_thread.start()

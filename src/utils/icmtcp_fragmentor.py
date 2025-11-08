@@ -6,7 +6,7 @@ import pickle
 logger = Logger(__name__)
 
 @staticmethod
-def fragment(tcp_data, id, dest_host, dest_port):
+def fragment(tcp_data: bytes, id: int, dest_host: str, dest_port: int):
     """
     @brief: Fragment TCP data into ICMP packets
     @param tcp_data: raw TCP data to be fragmented
@@ -40,7 +40,7 @@ def fragment(tcp_data, id, dest_host, dest_port):
     return fragments
 
 @staticmethod
-def create_header_fragment(tcp_data, dest_host, dest_port, id):
+def create_header_fragment(tcp_data: bytes, dest_host: str, dest_port: int, id: int):
     """
     @brief: Create the header fragment containing metadata about the TCP data
     @param tcp_data: raw TCP data

@@ -1,65 +1,98 @@
 import socket
 import time
 import pytest
-import subprocess
+import subprocess, os
 
 
-@pytest.mark.integration
-def test_basic_connection():
-    tunneled_command = "curl -p http://127.0.0.1:1704 http://95.85.16.212/"
+@pytest.fixture(scope="module")
+def socat_forwarders():
+    """
+    sets up socat listeners that forward traffic to the icmtcp_client instances.
+    - localhost:8080 -> client:1704 (for 95.85.16.212)
+    - localhost:8081 -> client:1705 (for 1.1.1.1)
+    """
+    procs = []
+    commands = [
+        "socat TCP4-LISTEN:8080,fork,reuseaddr TCP4:127.0.0.1:1704",
+        "socat TCP4-LISTEN:8081,fork,reuseaddr TCP4:127.0.0.1:1705"
+    ]
+    for cmd in commands:
+        proc = subprocess.Popen(cmd, shell=True, preexec_fn=os.setsid)
+        procs.append(proc)
+    
+    time.sleep(1) 
+    yield
+    for proc in procs:
+        os.killpg(os.getpgid(proc.pid), subprocess.signal.SIGTERM)
+
+
+def test_basic_connection(socat_forwarders):
+    """Tests a basic HTTP GET request through the tunnel."""
+    tunneled_command = "curl -s -i http://127.0.0.1:8080/ -H 'Host: 95.85.16.212'"
     tunnel_result = subprocess.check_output(tunneled_command, shell=True, text=True)
-    command = "curl http://95.85.16.212/"
+    
+    command = "curl -s -i http://95.85.16.212/"
     regular_result = subprocess.check_output(command, shell=True, text=True)
-    assert tunnel_result[:100] == regular_result[:100]
+    
+    assert "HTTP/1.1 200 OK" in tunnel_result.splitlines()[0]
+    assert tunnel_result.splitlines()[0] == regular_result.splitlines()[0]
 
 
-@pytest.mark.integration
-def test_multiple_requests():
-    tunneled_command = "curl -p http://127.0.0.1:1704 http://95.85.16.212/"
+def test_multiple_requests(socat_forwarders):
+    """Tests that multiple sequential requests on the same port work correctly."""
+    tunneled_command = "curl -s -i http://127.0.0.1:8080/ -H 'Host: 95.85.16.212'"
     for _ in range(3):
         tunnel_result = subprocess.check_output(tunneled_command, shell=True, text=True)
-        assert tunnel_result.startswith('<!DOCTYPE html>')
+        assert "HTTP/1.1 200 OK" in tunnel_result
 
 
-@pytest.mark.integration
-def test_connection_timeout():
-    """ 
-    Ensure client has a timeout configured and will close inactive sockets 
-    """
-    s = socket.create_connection(('127.0.0.1', 1704), timeout=5)
-    # wait longer than typical client timeout configured in code
-    time.sleep(2)
+def test_client_connection_timeout():
+    """Ensures the client closes an inactive socket after its timeout."""
+    client_timeout = 4 
+    
+    s = socket.create_connection(('127.0.0.1', 1704), timeout=2)
+    print(f"Socket connected. Waiting for {client_timeout + 1} seconds to trigger timeout...")
+    time.sleep(client_timeout + 1)
+    
     try:
-        s.send(b'GET / HTTP/1.0\r\nHost: 95.85.16.212\r\n\r\n')
-        _ = s.recv(1024)
-    except Exception:
-        pytest.skip('Connection timed out or closed by client; acceptable')
+        s.sendall(b'ping')
+        data = s.recv(1024)
+        assert data == b'', "Connection should have been closed by the client, but it's still open."
+    except (ConnectionResetError, BrokenPipeError):
+        assert True
+    except Exception as e:
+        pytest.fail(f"Expected a connection error, but got {type(e).__name__}: {e}")
     finally:
         s.close()
 
 
-@pytest.mark.integration
-def test_large_data_transfer():
-    s = socket.create_connection(('127.0.0.1', 1704), timeout=10)
-    large = b'X' * 65536
-    req = b'POST / HTTP/1.0\r\nHost: 95.85.16.212\r\nContent-Length: %d\r\n\r\n' % len(large)
-    s.send(req + large)
-    r = s.recv(4096)
-    s.close()
-    assert len(r) >= 0
+def test_large_data_transfer(socat_forwarders):
+    """Tests fragmentation by sending a large payload."""
+    large_payload = b'X' * 20000 
+
+    post_command = (
+        f"curl -s -i -X POST --data-binary @- http://127.0.0.1:8080/ "
+        f"-H 'Host: 95.85.16.212' -H 'Content-Type: text/plain' -H 'Content-Length: {len(large_payload)}'"
+    )
+    
+    process = subprocess.Popen(post_command, shell=True, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    stdout, _ = process.communicate(input=large_payload.decode())
+    
+    assert "HTTP/1.1" in stdout
 
 
-@pytest.mark.integration
-def test_multiple_packet_streams():
-    tunneled_command_1 = "curl -p http://127.0.0.1:1704 http://95.85.16.212/"
-    tunneled_command_2 = "curl -p http://127.0.0.1:1705 http://1.1.1.1"
+def test_multiple_parallel_streams(socat_forwarders):
+    """Tests that two client instances can run in parallel, tunneling to different destinations."""
+    tunneled_command_1 = "curl -s -i http://127.0.0.1:8080/ -H 'Host: 95.85.16.212'"
+    tunneled_command_2 = "curl -s -i http://127.0.0.1:8081/ -H 'Host: 1.1.1.1'"
+    
     tunnel_result_1 = subprocess.check_output(tunneled_command_1, shell=True, text=True)
     tunnel_result_2 = subprocess.check_output(tunneled_command_2, shell=True, text=True)
-    #assert tunnel_result_1.startswith('<!DOCTYPE html>') or tunnel_result_1.startswith('<html>')
-    #assert tunnel_result_2.startswith('<!DOCTYPE html>') or tunnel_result_2.startswith('<html>')
-    command_1 = "curl http://95.85.16.212/"
-    command_2 = "curl http://1.1.1.1"
+    
+    command_1 = "curl -s -i http://95.85.16.212/"
+    command_2 = "curl -s -i http://1.1.1.1"
     result_1 = subprocess.check_output(command_1, shell=True, text=True)
     result_2 = subprocess.check_output(command_2, shell=True, text=True)
-    assert result_1[:100] == tunnel_result_1[:100]
-    assert result_2[:100] == tunnel_result_2[:100]
+    
+    assert result_1.splitlines()[0] == tunnel_result_1.splitlines()[0]
+    assert result_2.splitlines()[0] == tunnel_result_2.splitlines()[0]

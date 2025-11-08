@@ -12,16 +12,22 @@ logger = Logger(__name__)
 
 class ICMTCPServer:
     def __init__(self, tunnel_ip):
+        """! The constructor for ICMTCPServer class.
+        @param tunnel_ip The IP address of the ICMTCP client.
+        """
         self.icmp_tunnel = ICMTCPTunnel(tunnel_ip)
         self.active_tcp_connections = {}
+        self.connections_lock = threading.Lock()
 
     @staticmethod
-    def create_tcp_client_socket(ip, port):
+    def create_tcp_client_socket(ip: str, port: int):
         """
-        @brief Create a TCP client socket and connect to the specified IP and port.
-        @param ip The destination IP address
-        @param port The destination port
-        @returns The connected TCP client socket"""
+        @brief Create and connect a TCP client socket.
+        @param ip The destination IP address.
+        @param port The destination port.
+        @return The connected TCP client socket.
+        @exception e Raises an exception on connection failure.
+        """
         try:
             tcp_client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             tcp_client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -36,20 +42,25 @@ class ICMTCPServer:
 
         return tcp_client_socket
 
-    def _get_or_create_socket(self, dest_host, dest_port):
+    def _get_or_create_socket(self, dest_host: str, dest_port: int) -> socket.socket:
         """
-        Return an existing socket for (dest_host, dest_port) or create and store a new one.
+        @brief Retrieves an existing TCP socket or creates a new one for a destination.
+        @param dest_host The destination host IP address.
+        @param dest_port The destination port.
+        @return An active socket.socket object for the given destination.
         """
         key = (dest_host, dest_port)
-        tcp_socket = self.active_tcp_connections.get(key)
-        if not tcp_socket:
-            tcp_socket = self.create_tcp_client_socket(dest_host, dest_port)
-            self.active_tcp_connections[key] = tcp_socket
+        with self.connections_lock:
+            tcp_socket = self.active_tcp_connections.get(key)
+            if not tcp_socket:
+                tcp_socket = self.create_tcp_client_socket(dest_host, dest_port)
+                self.active_tcp_connections[key] = tcp_socket
         return tcp_socket
 
-    def _close_and_remove_socket(self, sock):
+    def _close_and_remove_socket(self, sock: socket.socket) -> None:
         """
-        Cleanly shutdown and close a socket and remove it from active connections.
+        @brief Cleanly shuts down, closes, and removes a socket from active_connections.
+        @param sock The socket.socket object to close.
         """
         try:
             try:
@@ -58,34 +69,41 @@ class ICMTCPServer:
                 pass
             sock.close()
         except Exception:
-            # ignore errors during close
             pass
         finally:
-            # Ensure it's removed from tracking
-            self.remove_closed_connection(sock)
+            self._remove_closed_connection(sock)
 
-    def _try_send_with_reconnect(self, tcp_socket, tcp_data, dest_host, dest_port, retries=3, initial_backoff=0.5):
+    def _try_send_with_reconnect(self, tcp_socket: socket.socket, tcp_data: bytes, 
+                                 dest_host: str, dest_port: int, retries=3, initial_backoff=0.5) -> None:
         """
-        send data to tcp destination with reconnects if connection is lost.
+        @brief Attempts to send data, with automatic reconnection and retries on failure.
+        @param tcp_socket The target socket for sending data.
+        @param tcp_data The bytes to send.
+        @param dest_host The destination host, used for reconnecting.
+        @param dest_port The destination port, used for reconnecting.
+        @param retries The number of times to retry reconnecting.
+        @param initial_backoff The initial delay in seconds before the first retry.
         """
         success, err = self._send_once(tcp_socket, tcp_data, dest_host, dest_port)
         if success:
             return True
 
-        # Log the original send failure and close/remove the socket
         logger.warning(f"Initial send failed to {dest_host}:{dest_port}: {err}")
         try:
             self._close_and_remove_socket(tcp_socket)
         except Exception:
             pass
 
-        # Attempt to reconnect and resend
         return self._attempt_reconnect_and_resend(dest_host, dest_port, tcp_data, retries=retries, initial_backoff=initial_backoff)
 
     def _send_once(self, sock, data, dest_host, dest_port):
         """
-        Try a single send on sock. Returns (True, None) on success or (False, exception) on failure.
-        Only catches BrokenPipeError/ConnectionResetError/OSError as expected send failures.
+        @brief Performs a single attempt to send data over a socket.
+        @param sock The socket to send data on.
+        @param data The data to send.
+        @param dest_host Destination host for logging.
+        @param dest_port Destination port for logging.
+        @return A tuple (bool, Exception) indicating success or failure with the error.
         """
         try:
             sock.sendall(data)
@@ -94,22 +112,25 @@ class ICMTCPServer:
         except (BrokenPipeError, ConnectionResetError, OSError) as send_err:
             return False, send_err
         except Exception as e:
-            # Unexpected exception - return as failure so caller can decide
             return False, e
 
     def _attempt_reconnect_and_resend(self, dest_host, dest_port, data, retries=3, initial_backoff=0.5):
         """
-        Attempt to reconnect to dest_host:dest_port up to `retries` times.
-        resend `data` once after a successful reconnect.
-
-        Returns True on success, False otherwise.
+        @brief Attempts to reconnect and resend data after a connection failure.
+        @param dest_host The destination host to reconnect to.
+        @param dest_port The destination port to reconnect to.
+        @param data The data to resend after reconnecting.
+        @param retries The number of reconnect attempts.
+        @param initial_backoff The initial backoff delay for retries.
+        @return True if reconnection and resend were successful, False otherwise.
         """
         backoff = initial_backoff
         for i in range(retries):
             try:
                 logger.info(f"Reconnecting to {dest_host}:{dest_port} (attempt {i+1}/{retries})")
                 new_sock = self.create_tcp_client_socket(dest_host, dest_port)
-                self.active_tcp_connections[(dest_host, dest_port)] = new_sock
+                with self.connections_lock:
+                    self.active_tcp_connections[(dest_host, dest_port)] = new_sock
                 new_sock.sendall(data)
                 logger.info(f"Resent TCP data to {dest_host}:{dest_port} after reconnect")
                 return True
@@ -121,9 +142,11 @@ class ICMTCPServer:
         logger.error(f"Failed to send TCP data to {dest_host}:{dest_port} after {retries} reconnect attempts")
         return False
 
-    def tunnel_to_tcp_worker(self):
+    def _tunnel_to_tcp_worker(self):
         """
-        @brief Worker function to handle incoming TCP data from ICMP tunnel and forward to TCP sockets.
+        @brief Worker thread function to forward data from the ICMP tunnel to TCP destinations.
+        
+        This method runs in a loop, taking packets from the ICMP tunnel's receive queue and forwarding them to the appropriate outbound TCP socket.
         """
         while True:
             if self.icmp_tunnel.recieved_tcp_packets:
@@ -136,60 +159,64 @@ class ICMTCPServer:
                 except Exception as e:
                     logger.error(f"Failed to send TCP data to {dest_host}:{dest_port}: {e}")
 
-    def find_source_socket_address(self, tcp_socket):
+    def _find_source_socket_address(self, tcp_socket):
         """
-        @brief Find the source address (host, port) for a given TCP socket
-        @param tcp_socket The TCP socket to find the source address for
-        @returns (host, port) tuple if found, else None"""
-        for (host, port), s in self.active_tcp_connections.items():
-            if s == tcp_socket:
-                return host, port
-        return None, None
+        @brief Finds the destination address associated with an active TCP socket.
+        @param tcp_socket The TCP socket object.
+        @return A tuple (host, port) if the socket is found, otherwise (None, None).
+        """
+        with self.connections_lock:
+            for (host, port), s in self.active_tcp_connections.items():
+                if s == tcp_socket:
+                    return host, port
+            return None, None
     
-    def remove_closed_connection(self, socket):
+    def _remove_closed_connection(self, socket):
         """
-        @brief Remove a closed TCP connection from active connections
-        @param socket The TCP socket that has been closed
+        @brief Removes a closed TCP connection from the active connections dictionary.
+        @param socket The closed TCP socket object.
         """
-        for (host, port), s in list(self.active_tcp_connections.items()):
-            if s == socket:
-                del self.active_tcp_connections[(host, port)]
-                logger.info(f"Removed closed connection to {host}:{port}")
-                return
+        with self.connections_lock:
+            for (host, port), s in list(self.active_tcp_connections.items()):
+                if s == socket:
+                    del self.active_tcp_connections[(host, port)]
+                    logger.info(f"Removed closed connection to {host}:{port}")
+                    return
             
-    def send_tcp_data_to_tunnel(self, tcp_data, source_socket):
+    def _send_tcp_data_to_tunnel(self, tcp_data, source_socket):
         """
-        @brief Send recieved TCP data to the ICMP tunnel
-        @param tcp_data The TCP data to send
-        @param source_socket The source TCP socket
+        @brief Sends received TCP data back to the client through the ICMP tunnel.
+        @param tcp_data The TCP data to send.
+        @param source_socket The source TCP socket from which the data was read.
         """
-        dest_host, dest_port = self.find_source_socket_address(source_socket)
+        dest_host, dest_port = self._find_source_socket_address(source_socket)
         if dest_host and dest_port:
             logger.info(f"Sending TCP data from {dest_host}:{dest_port} to ICMP tunnel")
             self.icmp_tunnel.send_tcp_data(tcp_data, dest_host, dest_port)
         else:
             logger.error("Source socket address not found, cannot send TCP data to tunnel")
 
-    def tcp_to_tunnel_worker(self):
+    def _tcp_to_tunnel_worker(self):
         """
-        @brief Worker function to handle incoming TCP data and forward to ICMP tunnel.
+        @brief Worker thread function to read data from TCP sockets and forward it to the ICMP tunnel.
+        
+        This method uses `select` to monitor all active outbound TCP connections for incoming data 
+            and sends it back to the client through the tunnel.
         """
         while True:
-            # Log the current state of active connections
-            socket_count = len(self.active_tcp_connections)
-            if socket_count > 0:
-                logger.debug(f"Checking {socket_count} active TCP connections for data")
-                sockets_to_check = [sock for sock in self.active_tcp_connections.values()]
-                logger.debug(f"Active connections: {[(host, port) for (host, port) in self.active_tcp_connections.keys()]}")
-            else:
+            with self.connections_lock:
+                sockets_to_check = list(self.active_tcp_connections.values())
+
+            if not sockets_to_check:
                 time.sleep(0.1) 
                 continue
 
-            # Create list of sockets to check
-            sockets_to_check = [sock for sock in self.active_tcp_connections.values()]
-            logger.debug(f"Waiting on select() for {len(sockets_to_check)} sockets")
-            readable_sockets, _, _ = select.select(sockets_to_check, [], [], 1.0)  # 1 second timeout
-            
+            try:
+                readable_sockets, _, _ = select.select(sockets_to_check, [], [], 1.0)
+            except ValueError:
+                logger.warning("select() error, likely due to a closed socket. Retrying.")
+                continue
+
             if readable_sockets:
                 logger.debug(f"Found {len(readable_sockets)} readable sockets")
             
@@ -198,22 +225,24 @@ class ICMTCPServer:
                     data = sock.recv(TCP_PACKET_SIZE)
                     if data:
                         logger.debug(f"Received {len(data)} bytes from TCP socket")
-                        self.send_tcp_data_to_tunnel(data, sock)
+                        self._send_tcp_data_to_tunnel(data, sock)
                     else:
-                        logger.debug("TCP socket closed by remote peer (received empty data)")
-                        sock.close()
-                        self.remove_closed_connection(sock)
+                        logger.info("TCP socket closed by remote peer (received empty data)")
+                        self._remove_closed_connection(sock)
 
                 except Exception as e:
                     logger.error(f"Error handling TCP socket: {e}")
 
     def run(self):
         """
-        @brief Start the ICMTCP server
+        @brief Starts the ICMTCP server and its worker threads.
+        
+        Initializes and starts the ICMP tunnel thread, the TCP-to-tunnel worker,
+             and the tunnel-to-TCP worker.
         """
         tunnel_thread = threading.Thread(target=self.icmp_tunnel.run, daemon=True)
-        tcp_to_tunnel_thread = threading.Thread(target=self.tcp_to_tunnel_worker, daemon=True)
-        tunnel_to_tcp_thread = threading.Thread(target=self.tunnel_to_tcp_worker, daemon=True)
+        tcp_to_tunnel_thread = threading.Thread(target=self._tcp_to_tunnel_worker, daemon=True)
+        tunnel_to_tcp_thread = threading.Thread(target=self._tunnel_to_tcp_worker, daemon=True)
 
         tunnel_thread.start()
         tcp_to_tunnel_thread.start()
@@ -223,11 +252,13 @@ class ICMTCPServer:
 
     def close(self):
         """
-        @brief Close the ICMTCP server and all active connections
+        @brief Shuts down the ICMTCP server and closes all active connections.
         """
         self.icmp_tunnel.close()
-        for sock in self.active_tcp_connections.values():
-            sock.close()
+        with self.connections_lock:
+            for sock in self.active_tcp_connections.values():
+                sock.close()
+            self.active_tcp_connections.clear()
         logger.info("ICMTCP server closed")
 
 def parse_args():

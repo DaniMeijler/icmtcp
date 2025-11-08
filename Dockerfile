@@ -9,6 +9,7 @@ RUN apt-get update && \
         iputils-ping \
         procps \
         curl \
+        socat \
         ca-certificates && \
     curl --version && \
     apt-get clean && \
