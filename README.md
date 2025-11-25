@@ -1,4 +1,4 @@
-# ICMTCP3
+# ICMTCP
 
 ICMTCP is a tool for tunneling TCP over ICMP. This tool requires two hosts to work.
 
